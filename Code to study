@@ -1,0 +1,58 @@
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from sklearn.preprocessing import MinMaxScaler
+import matplotlib.pyplot as plt
+
+# Load the data
+df = pd.read_csv("your_data.csv")
+df['DATE/TIME'] = pd.to_datetime(df['DATE/TIME'])
+df.set_index('DATE/TIME', inplace=True)
+df['DATA (psi)'] = df['DATA (psi)'].astype(float)
+
+# Normalize the data
+scaler = MinMaxScaler(feature_range=(0, 1))
+df_scaled = scaler.fit_transform(df[['DATA (psi)']])
+
+# Create sequences for LSTM
+def create_sequences(data, window_size):
+    X, y = [], []
+    for i in range(len(data) - window_size):
+        X.append(data[i:i + window_size])
+        y.append(data[i + window_size])
+    return np.array(X), np.array(y)
+
+WINDOW_SIZE = 16  # Using 4 hours of data for predicting 15 minutes ahead
+X, y = create_sequences(df_scaled, WINDOW_SIZE)
+
+# Reshape X for LSTM (samples, time steps, features)
+X = X.reshape((X.shape[0], X.shape[1], 1))
+
+# Build the LSTM model
+model = keras.models.Sequential([
+    layers.LSTM(64, return_sequences=True, input_shape=(WINDOW_SIZE, 1)),
+    layers.LSTM(32, return_sequences=False),
+    layers.Dense(16, activation='relu'),
+    layers.Dense(1)
+])
+
+model.compile(optimizer='adam', loss='mean_squared_error')
+
+# Train the model
+model.fit(X, y, epochs=20, batch_size=32, validation_split=0.2)
+
+# Forecasting future values
+predicted_values = model.predict(X)
+predicted_values = scaler.inverse_transform(predicted_values)
+
+# Plotting actual vs predicted values
+plt.plot(df.index[WINDOW_SIZE:], df['DATA (psi)'][WINDOW_SIZE:], label='Actual Data')
+plt.plot(df.index[WINDOW_SIZE:], predicted_values, label='Predicted Data', color='red')
+plt.xlabel('Date/Time')
+plt.ylabel('DATA (psi)')
+plt.title('LSTM Forecasting with Window Size 16')
+plt.legend()
+plt.grid(True)
+plt.show()
